@@ -1,12 +1,14 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { tasasService, HistorialData } from '../service/tasasService';
+import { tasasService } from '../service/tasasService';
 import { LineChart, Line, ResponsiveContainer, YAxis } from 'recharts';
 
 export default function Dashboard({ initialTasas }: { initialTasas: any }) {
   // Ajuste: Accedemos a initialTasas.data porque el JSON lo envuelve así
   const tasas = initialTasas?.data; 
-  const [historial, setHistorial] = useState<HistorialData[]>([]);
+  
+  // SOLUCIÓN: Cambiamos <HistorialData[]> por <any[]> para calmar a TypeScript en Vercel
+  const [historial, setHistorial] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
