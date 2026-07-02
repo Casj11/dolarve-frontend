@@ -222,13 +222,13 @@ export default function Historial({ historial }: HistorialProps) {
         </button>
       </div>
 
-      {/* ÁREA DE LA GRÁFICA INTERACTIVA (CORREGIDO DE w-100 A w-full) */}
+      {/* ÁREA DE LA GRÁFICA INTERACTIVA */}
       <div className="h-64 w-full relative">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
             data={dataFiltrada}
             margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-            onMouseMove={(e) => {
+            onMouseMove={(e: any) => {
               if (e && e.activePayload && e.activePayload.length > 0) {
                 setActivePoint(e.activePayload[0].payload);
               }
