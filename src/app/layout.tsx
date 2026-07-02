@@ -31,3 +31,5 @@ export default function RootLayout({
     </html>
   );
 }
+// En app/layout.tsx
+<body suppressHydrationWarning={true} className="..."></body>
