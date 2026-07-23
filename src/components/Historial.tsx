@@ -14,12 +14,11 @@ interface CustomTooltipProps {
   showUsdt: boolean;
 }
 
-// 2. COMPONENTE TOOLTIP CORRECAMENTE UBICADO AFUERA (EVITA RE-CREACIÓN EN CADA RENDER)
+// 2. COMPONENTE TOOLTIP
 const CustomTooltip = ({ active, payload, showBcv, showUsdt }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     
-    // Construimos los elementos de forma reactiva
     const items = [
       {
         id: 'bcv',
@@ -36,14 +35,11 @@ const CustomTooltip = ({ active, payload, showBcv, showUsdt }: CustomTooltipProp
         visible: showUsdt
       }
     ]
-    // Filtramos los desactivados por el usuario
     .filter(item => item.visible)
-    // ORDENAMIENTO DINÁMICO: El más caro siempre se posiciona arriba
     .sort((a, b) => b.value - a.value);
 
-    // Formateador interno y seguro de fecha para el tooltip
     let fechaFormateada = '--/--/----';
-    if (data.fecha) {
+    if (data.fecha && typeof data.fecha === 'string') {
       const limpia = data.fecha.split('T')[0];
       const partes = limpia.split('-');
       if (partes.length === 3) {
@@ -83,6 +79,9 @@ export default function Historial({ historial }: HistorialProps) {
   const [showBcv, setShowBcv] = useState(true);
   const [showUsdt, setShowUsdt] = useState(true);
 
+  // Estado para controlar la ventana modal del reporte mensual
+  const [showReportModal, setShowReportModal] = useState(false);
+
   const getFilteredData = () => {
     if (!historial || historial.length === 0) return [];
     
@@ -97,7 +96,7 @@ export default function Historial({ historial }: HistorialProps) {
         return historial.slice(-180);
       case 'YTD':
         const añoActual = new Date().getFullYear().toString();
-        return historial.filter(item => item.fecha && item.fecha.startsWith(añoActual));
+        return historial.filter(item => item && item.fecha && item.fecha.startsWith(añoActual));
       default:
         return historial.slice(-7);
     }
@@ -112,9 +111,59 @@ export default function Historial({ historial }: HistorialProps) {
   const diferencia = usdtVal - bcvVal;
   const difPorcentaje = bcvVal ? (diferencia / bcvVal) * 100 : 0;
 
-  // Formateadores para la gráfica general
-  const formatEjeX = (fechaRaw: string) => {
-    if (!fechaRaw) return '';
+  // Datos fijos de los últimos 30 días para el Reporte Mensual
+  const datosUltimoMes = historial ? historial.slice(-30) : [];
+
+  // Cálculos estadísticos para el Reporte Mensual
+  const calcularEstadisticasMes = () => {
+    if (!datosUltimoMes || datosUltimoMes.length === 0) return null;
+
+    const primerDato = datosUltimoMes[0];
+    const ultimoDato = datosUltimoMes[datosUltimoMes.length - 1];
+
+    const bcvInicial = primerDato?.bcv || 0;
+    const bcvFinal = ultimoDato?.bcv || 0;
+    const varBcv = bcvFinal - bcvInicial;
+    const varBcvPct = bcvInicial ? (varBcv / bcvInicial) * 100 : 0;
+
+    const usdtInicial = primerDato?.binance || 0;
+    const usdtFinal = ultimoDato?.binance || 0;
+    const varUsdt = usdtFinal - usdtInicial;
+    const varUsdtPct = usdtInicial ? (varUsdt / usdtInicial) * 100 : 0;
+
+    const bcvMax = Math.max(...datosUltimoMes.map(d => d?.bcv || 0));
+    const bcvMin = Math.min(...datosUltimoMes.map(d => d?.bcv || Infinity));
+    const usdtMax = Math.max(...datosUltimoMes.map(d => d?.binance || 0));
+    const usdtMin = Math.min(...datosUltimoMes.map(d => d?.binance || Infinity));
+
+    const promedioBcv = datosUltimoMes.reduce((acc, curr) => acc + (curr?.bcv || 0), 0) / datosUltimoMes.length;
+    const promedioUsdt = datosUltimoMes.reduce((acc, curr) => acc + (curr?.binance || 0), 0) / datosUltimoMes.length;
+    const brechaPromedio = promedioBcv ? ((promedioUsdt - promedioBcv) / promedioBcv) * 100 : 0;
+
+    return {
+      fechaInicio: primerDato?.fecha,
+      fechaFin: ultimoDato?.fecha,
+      bcvFinal,
+      varBcv,
+      varBcvPct,
+      usdtFinal,
+      varUsdt,
+      varUsdtPct,
+      bcvMax,
+      bcvMin: bcvMin === Infinity ? 0 : bcvMin,
+      usdtMax,
+      usdtMin: usdtMin === Infinity ? 0 : usdtMin,
+      promedioBcv,
+      promedioUsdt,
+      brechaPromedio
+    };
+  };
+
+  const statsMes = calcularEstadisticasMes();
+
+  // Formateadores de fecha protegidos contra undefined / no-string
+  const formatEjeX = (fechaRaw?: string) => {
+    if (!fechaRaw || typeof fechaRaw !== 'string') return '';
     const limpia = fechaRaw.split('T')[0];
     const partes = limpia.split('-');
     if (partes.length < 3) return '';
@@ -122,15 +171,39 @@ export default function Historial({ historial }: HistorialProps) {
     return `${partes[2]} ${meses[parseInt(partes[1]) - 1]}`;
   };
 
-  const formatFechaCompletaGeneral = (fechaRaw: string) => {
-    if (!fechaRaw) return '--/--/----';
+  const formatFechaCompletaGeneral = (fechaRaw?: string) => {
+    if (!fechaRaw || typeof fechaRaw !== 'string') return '--/--/----';
     const limpia = fechaRaw.split('T')[0];
     const partes = limpia.split('-');
     return partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : '--/--/----';
   };
 
+  // Función para descargar el reporte del último mes en Excel / CSV
+  const descargarExcelMes = () => {
+    if (datosUltimoMes.length === 0) return;
+
+    let csvContent = "data:text/csv;charset=utf-8,Fecha,Dolar BCV (Bs),Binance USDT (Bs),Diferencial (Bs),Brecha (%)\n";
+
+    datosUltimoMes.forEach((row) => {
+      const f = formatFechaCompletaGeneral(row?.fecha);
+      const b = (row?.bcv || 0).toFixed(2);
+      const u = (row?.binance || 0).toFixed(2);
+      const dif = ((row?.binance || 0) - (row?.bcv || 0)).toFixed(2);
+      const pct = row?.bcv ? (((row.binance - row.bcv) / row.bcv) * 100).toFixed(2) : '0.00';
+      csvContent += `${f},${b},${u},${dif},${pct}%\n`;
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Reporte_Mensual_Tasas_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
-    <div className="bg-[#162235] rounded-2xl border border-[#23334c] p-6 shadow-xl space-y-6 max-w-5xl mx-auto">
+    <div className="bg-[#162235] rounded-2xl border border-[#23334c] p-6 shadow-xl space-y-6 max-w-5xl mx-auto relative">
       
       {/* ENCABEZADO Y CONTROLES DE RANGO */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -139,20 +212,33 @@ export default function Historial({ historial }: HistorialProps) {
           <h2 className="text-white text-xl font-black tracking-tight mt-0.5">Evolución de Tasas</h2>
         </div>
         
-        <div className="flex bg-[#0B111E] p-1 rounded-xl border border-[#23334c] gap-1 self-stretch sm:self-auto overflow-x-auto scrollbar-none">
-          {(['7D', '1M', '3M', '6M', 'YTD'] as const).map((r) => (
-            <button
-              key={r}
-              onClick={() => { setRange(r); setActivePoint(null); }}
-              className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 uppercase tracking-wide whitespace-nowrap ${
-                range === r
-                  ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30 shadow-md'
-                  : 'text-gray-500 hover:text-gray-300 border border-transparent'
-              }`}
-            >
-              {r}
-            </button>
-          ))}
+        <div className="flex items-center gap-2 self-stretch sm:self-auto">
+          {/* BOTÓN REPORTE MENSUAL */}
+          <button
+            onClick={() => setShowReportModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 active:scale-95 whitespace-nowrap"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Reporte Mensual
+          </button>
+
+          <div className="flex bg-[#0B111E] p-1 rounded-xl border border-[#23334c] gap-1 overflow-x-auto scrollbar-none flex-1 sm:flex-none">
+            {(['7D', '1M', '3M', '6M', 'YTD'] as const).map((r) => (
+              <button
+                key={r}
+                onClick={() => { setRange(r); setActivePoint(null); }}
+                className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 uppercase tracking-wide whitespace-nowrap ${
+                  range === r
+                    ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30 shadow-md'
+                    : 'text-gray-500 hover:text-gray-300 border border-transparent'
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -264,7 +350,6 @@ export default function Historial({ historial }: HistorialProps) {
               width={40}
             />
 
-            {/* SE PASAN LAS VISIBILIDADES DESDE AQUÍ PARA CLONACIÓN CORRECTA */}
             <Tooltip 
               content={<CustomTooltip showBcv={showBcv} showUsdt={showUsdt} />} 
               cursor={{ stroke: '#475569', strokeWidth: 1, strokeDasharray: '4 4' }} 
@@ -293,6 +378,166 @@ export default function Historial({ historial }: HistorialProps) {
           </AreaChart>
         </ResponsiveContainer>
       </div>
+
+      {/* MODAL DEL REPORTE MENSUAL */}
+      {showReportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#162235] border border-[#23334c] w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            
+            {/* Header del Modal */}
+            <div className="flex items-center justify-between p-4 border-b border-[#23334c] bg-[#0B111E]">
+              <div>
+                <h3 className="text-white font-black text-base flex items-center gap-2">
+                  <span>📈</span> Reporte de Comportamiento Mensual (30 Días)
+                </h3>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Periodo del {formatFechaCompletaGeneral(statsMes?.fechaInicio)} al {formatFechaCompletaGeneral(statsMes?.fechaFin)}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowReportModal(false)}
+                className="text-gray-400 hover:text-white p-1 rounded-lg transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Contenido del Modal */}
+            <div className="overflow-y-auto p-4 space-y-5 flex-1">
+              
+              {/* RESUMEN EJECUTIVO (TARJETAS ANALÍTICAS) */}
+              {statsMes && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  
+                  {/* Tarjeta BCV */}
+                  <div className="bg-[#0B111E] p-3.5 rounded-xl border border-[#23334c] space-y-1">
+                    <span className="text-gray-400 text-[10px] font-bold uppercase tracking-wider block">Dólar BCV</span>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-white font-black text-base">Bs. {statsMes.bcvFinal.toFixed(2)}</span>
+                      <span className={`text-xs font-bold ${statsMes.varBcv >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {statsMes.varBcv >= 0 ? '+' : ''}{statsMes.varBcv.toFixed(2)} Bs ({statsMes.varBcvPct.toFixed(2)}%)
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-gray-400 pt-1 border-t border-[#23334c]/50 flex justify-between">
+                      <span>Mín: Bs. {statsMes.bcvMin.toFixed(2)}</span>
+                      <span>Máx: Bs. {statsMes.bcvMax.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  {/* Tarjeta USDT */}
+                  <div className="bg-[#0B111E] p-3.5 rounded-xl border border-[#23334c] space-y-1">
+                    <span className="text-gray-400 text-[10px] font-bold uppercase tracking-wider block">Binance USDT</span>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-white font-black text-base">Bs. {statsMes.usdtFinal.toFixed(2)}</span>
+                      <span className={`text-xs font-bold ${statsMes.varUsdt >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {statsMes.varUsdt >= 0 ? '+' : ''}{statsMes.varUsdt.toFixed(2)} Bs ({statsMes.varUsdtPct.toFixed(2)}%)
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-gray-400 pt-1 border-t border-[#23334c]/50 flex justify-between">
+                      <span>Mín: Bs. {statsMes.usdtMin.toFixed(2)}</span>
+                      <span>Máx: Bs. {statsMes.usdtMax.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  {/* Tarjeta Promedios y Brecha */}
+                  <div className="bg-[#0B111E] p-3.5 rounded-xl border border-[#23334c] space-y-1">
+                    <span className="text-gray-400 text-[10px] font-bold uppercase tracking-wider block">Brecha Promedio</span>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-amber-400 font-black text-base">{statsMes.brechaPromedio.toFixed(2)}%</span>
+                      <span className="text-[10px] text-gray-400">Promedio Mes</span>
+                    </div>
+                    <div className="text-[10px] text-gray-400 pt-1 border-t border-[#23334c]/50 flex justify-between">
+                      <span>Prom. BCV: {statsMes.promedioBcv.toFixed(2)}</span>
+                      <span>Prom. USDT: {statsMes.promedioUsdt.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
+              {/* TABLA DETALLADA DE REGISTROS DEL MES */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-gray-300 uppercase tracking-wider">Histórico de Registros (Últimos 30 días)</h4>
+                
+                {datosUltimoMes.length === 0 ? (
+                  <p className="text-center text-gray-400 text-sm py-8">No hay registros disponibles para el último mes.</p>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-[#23334c]">
+                    <table className="w-full text-left text-xs text-gray-300">
+                      <thead className="bg-[#0B111E] text-gray-400 uppercase text-[10px] font-bold sticky top-0 border-b border-[#23334c]">
+                        <tr>
+                          <th className="py-2.5 px-3">Fecha</th>
+                          <th className="py-2.5 px-3">Dólar BCV</th>
+                          <th className="py-2.5 px-3">Binance USDT</th>
+                          <th className="py-2.5 px-3">Diferencial</th>
+                          <th className="py-2.5 px-3 text-right">Brecha</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#23334c]/50 bg-[#162235]">
+                        {datosUltimoMes.map((item, idx) => {
+                          const b = item?.bcv || 0;
+                          const u = item?.binance || 0;
+                          const dif = u - b;
+                          const pct = b ? (dif / b) * 100 : 0;
+
+                          return (
+                            <tr key={idx} className="hover:bg-[#0B111E]/50 transition-colors">
+                              <td className="py-2 px-3 font-semibold text-white">
+                                {formatFechaCompletaGeneral(item?.fecha)}
+                              </td>
+                              <td className="py-2 px-3 text-blue-400 font-bold">
+                                Bs. {b.toFixed(2)}
+                              </td>
+                              <td className="py-2 px-3 text-emerald-400 font-bold">
+                                Bs. {u.toFixed(2)}
+                              </td>
+                              <td className="py-2 px-3 text-amber-400 font-medium">
+                                +{dif.toFixed(2)} Bs
+                              </td>
+                              <td className="py-2 px-3 text-right text-gray-400 font-medium">
+                                {pct.toFixed(2)}%
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+            {/* Footer del Modal con botón opcional de descarga a Excel */}
+            <div className="p-4 border-t border-[#23334c] bg-[#0B111E] flex justify-between items-center">
+              <span className="text-xs text-gray-400 font-medium">
+                Muestra analizada: {datosUltimoMes.length} días
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowReportModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-gray-400 hover:text-white transition-colors"
+                >
+                  Cerrar
+                </button>
+                <button
+                  onClick={descargarExcelMes}
+                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-md shadow-emerald-500/20 active:scale-95"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Descargar Excel (.csv)
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
