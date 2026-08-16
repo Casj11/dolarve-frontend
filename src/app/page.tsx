@@ -53,44 +53,95 @@ export default function HomePage() {
   // Estado para controlar qué ventana flotante de información está abierta
   const [infoAbierta, setInfoAbierta] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadAll() {
-      try {
-        // Pedimos 200 días para que los filtros 6M y YTD de Historial.tsx
-        // tengan datos reales que mostrar (antes se pedían solo 24-30).
-        const [resTasas, resHist] = await Promise.all([
-          fetch('/api/tasas'),
-          fetch('/api/historial?limit=200')
-        ]);
+  // Estados de carga y error: distinguen "todavía no llegó nada" de
+  // "llegó, pero falló" — antes ambos casos mostraban "Cargando..." para siempre.
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-        const jsonTasas: TasasResponse = await resTasas.json();
-        const jsonHist: HistorialResponse = await resHist.json();
+  async function loadAll() {
+    setLoading(true);
+    setError(null);
+    try {
+      // Pedimos 200 días para que los filtros 6M y YTD de Historial.tsx
+      // tengan datos reales que mostrar (antes se pedían solo 24-30).
+      const [resTasas, resHist] = await Promise.all([
+        fetch('/api/tasas'),
+        fetch('/api/historial?limit=200')
+      ]);
 
-        const rawData: HistorialItem[] = jsonHist.data || [];
-        const dailyDataMap = rawData.reduce<Record<string, HistorialItem>>((acc, item) => {
-          const date = item.fecha.split('T')[0];
-          acc[date] = item;
-          return acc;
-        }, {});
-
-        const sortedData: HistorialItem[] = Object.values(dailyDataMap).sort(
-          (a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime()
-        );
-
-        setData(jsonTasas.data);
-        // Guardamos el histórico completo (hasta 200 días). Las tarjetas de
-        // "Estadísticas Mensuales (30D)" recortan a 30 en el momento de usarlo;
-        // el componente Historial usa el set completo para sus propios rangos
-        // (7D/1M/3M/6M/YTD).
-        setHistorial(sortedData);
-      } catch (err) {
-        console.error("Error cargando datos:", err);
+      if (!resTasas.ok || !resHist.ok) {
+        throw new Error('El servidor de tasas respondió con un error. Intentá de nuevo en unos segundos.');
       }
+
+      const jsonTasas: TasasResponse = await resTasas.json();
+      const jsonHist: HistorialResponse = await resHist.json();
+
+      if (!jsonTasas.success || !jsonHist.success) {
+        throw new Error('No se pudieron consolidar las tasas en este momento.');
+      }
+
+      const rawData: HistorialItem[] = jsonHist.data || [];
+      const dailyDataMap = rawData.reduce<Record<string, HistorialItem>>((acc, item) => {
+        const date = item.fecha.split('T')[0];
+        acc[date] = item;
+        return acc;
+      }, {});
+
+      const sortedData: HistorialItem[] = Object.values(dailyDataMap).sort(
+        (a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime()
+      );
+
+      setData(jsonTasas.data);
+      // Guardamos el histórico completo (hasta 200 días). Las tarjetas de
+      // "Estadísticas Mensuales (30D)" recortan a 30 en el momento de usarlo;
+      // el componente Historial usa el set completo para sus propios rangos
+      // (7D/1M/3M/6M/YTD).
+      setHistorial(sortedData);
+    } catch (err) {
+      console.error("Error cargando datos:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo conectar con el servidor de tasas. Revisá tu conexión e intentá de nuevo.'
+      );
+    } finally {
+      setLoading(false);
     }
+  }
+
+  useEffect(() => {
     loadAll();
   }, []);
 
-  if (!data) return <main className="min-h-screen bg-[#0B111E] flex items-center justify-center text-white">Cargando...</main>;
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-[#0B111E] flex flex-col items-center justify-center text-white gap-3">
+        <span className="w-8 h-8 border-2 border-[#23334c] border-t-blue-500 rounded-full animate-spin" />
+        <span className="text-sm text-gray-400">Cargando tasas...</span>
+      </main>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <main className="min-h-screen bg-[#0B111E] flex flex-col items-center justify-center text-white gap-4 p-6 text-center">
+        <span className="text-4xl">⚠️</span>
+        <div>
+          <h2 className="text-white font-bold text-base mb-1">No pudimos cargar las tasas</h2>
+          <p className="text-gray-400 text-sm max-w-xs">
+            {error || 'Ocurrió un error inesperado.'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={loadAll}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold transition-all active:scale-95"
+        >
+          Reintentar
+        </button>
+      </main>
+    );
+  }
 
   // Variables de precios base
   const bcvRate = data.oficial?.usd || 0;
