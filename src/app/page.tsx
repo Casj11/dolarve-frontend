@@ -48,9 +48,11 @@ export default function HomePage() {
   useEffect(() => {
     async function loadAll() {
       try {
+        // Pedimos 200 días para que los filtros 6M y YTD de Historial.tsx
+        // tengan datos reales que mostrar (antes se pedían solo 24-30).
         const [resTasas, resHist] = await Promise.all([
           fetch('/api/tasas'),
-          fetch('/api/historial')
+          fetch('/api/historial?limit=200')
         ]);
         
         const jsonTasas = await resTasas.json();
@@ -68,7 +70,11 @@ export default function HomePage() {
         );
         
         setData(jsonTasas.data);
-        setHistorial(sortedData.slice(-30)); // 30 días de historial real
+        // Guardamos el histórico completo (hasta 200 días). Las tarjetas de
+        // "Estadísticas Mensuales (30D)" recortan a 30 en el momento de usarlo;
+        // el componente Historial usa el set completo para sus propios rangos
+        // (7D/1M/3M/6M/YTD).
+        setHistorial(sortedData as any[]);
       } catch (err) {
         console.error("Error cargando datos:", err);
       }
@@ -84,12 +90,14 @@ export default function HomePage() {
   const brechaBs = usdtRate - bcvRate;
   const brechaPorcentaje = bcvRate ? (brechaBs / bcvRate) * 100 : 0;
 
-  // Estadísticas mensuales
-  const listaUSDT = historial.map(h => h.binance).filter(Boolean);
+  // Estadísticas mensuales (siempre sobre los últimos 30 días, sin importar
+  // cuánto histórico completo se haya cargado)
+  const historial30D = historial.slice(-30);
+  const listaUSDT = historial30D.map(h => h.binance).filter(Boolean);
   const maxUSDT = listaUSDT.length ? Math.max(...listaUSDT) : usdtRate;
   const minUSDT = listaUSDT.length ? Math.min(...listaUSDT) : usdtRate;
   
-  const primerUSDT = historial[0]?.binance || usdtRate;
+  const primerUSDT = historial30D[0]?.binance || usdtRate;
   const rendimientoMensual = primerUSDT ? ((usdtRate - primerUSDT) / primerUSDT) * 100 : 0;
 
   const renderTooltipExplicativo = (id: string, texto: string) => {
@@ -162,7 +170,7 @@ export default function HomePage() {
 
             <div className="absolute inset-x-0 bottom-0 h-16 opacity-40 group-hover:opacity-60 transition-opacity">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={historial} margin={{ top: 10, bottom: 0, left: 0, right: 0 }}>
+                <AreaChart data={historial30D} margin={{ top: 10, bottom: 0, left: 0, right: 0 }}>
                   <defs>
                     <linearGradient id="colorBcv" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
@@ -205,7 +213,7 @@ export default function HomePage() {
 
             <div className="absolute inset-x-0 bottom-0 h-16 opacity-40 group-hover:opacity-60 transition-opacity">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={historial} margin={{ top: 10, bottom: 0, left: 0, right: 0 }}>
+                <AreaChart data={historial30D} margin={{ top: 10, bottom: 0, left: 0, right: 0 }}>
                   <defs>
                     <linearGradient id="colorUsdt" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#00C566" stopOpacity={0.4}/>
