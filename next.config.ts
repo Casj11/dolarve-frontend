@@ -1,10 +1,9 @@
-/** @type {import('next').NextConfig} */
 const nextConfig = {
   async rewrites() {
     return [
       {
         source: '/api/:path*',
-        destination: 'https://api-bcv-binance-tracker.vercel.app/api/:path*',
+        destination: `${process.env.API_URL}/api/:path*`,
       },
     ];
   },
