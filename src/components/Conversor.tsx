@@ -1,10 +1,13 @@
 'use client';
 import { useState, useEffect } from 'react';
+import type { TasasData } from '@/types/api';
 
-export default function Conversor({ data }: { data: any }) {
+type Moneda = 'USDT' | 'BCV' | 'VES';
+
+export default function Conversor({ data }: { data: TasasData }) {
   const [cantidad, setCantidad] = useState<string>('1');
-  const [desde, setDesde] = useState<'USDT' | 'BCV' | 'VES'>('USDT');
-  const [hasta, setHasta] = useState<'USDT' | 'BCV' | 'VES'>('VES');
+  const [desde, setDesde] = useState<Moneda>('USDT');
+  const [hasta, setHasta] = useState<Moneda>('VES');
   const [resultado, setResultado] = useState<number>(0);
 
   // Obtener tasas de la API
@@ -66,7 +69,7 @@ export default function Conversor({ data }: { data: any }) {
             />
             <select
               value={desde}
-              onChange={(e) => setDesde(e.target.value as any)}
+              onChange={(e) => setDesde(e.target.value as Moneda)}
               className="bg-[#162235] text-white text-sm font-bold py-1.5 px-3 rounded-lg border border-[#23334c] focus:outline-none cursor-pointer"
             >
               <option value="USDT">USDT 🟢</option>
@@ -102,7 +105,7 @@ export default function Conversor({ data }: { data: any }) {
             </div>
             <select
               value={hasta}
-              onChange={(e) => setHasta(e.target.value as any)}
+              onChange={(e) => setHasta(e.target.value as Moneda)}
               className="bg-[#162235] text-white text-sm font-bold py-1.5 px-3 rounded-lg border border-[#23334c] focus:outline-none cursor-pointer"
             >
               <option value="VES">VES 🇻🇪</option>

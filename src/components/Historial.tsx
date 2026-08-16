@@ -1,15 +1,16 @@
 'use client';
 import { useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import type { HistorialItem } from '@/types/api';
 
 interface HistorialProps {
-  historial: any[];
+  historial: HistorialItem[];
 }
 
 // 1. INTERFAZ PARA LAS PROPIEDADES DEL TOOLTIP
 interface CustomTooltipProps {
   active?: boolean;
-  payload?: any[];
+  payload?: Array<{ payload: HistorialItem }>;
   showBcv: boolean;
   showUsdt: boolean;
 }
@@ -70,10 +71,29 @@ const CustomTooltip = ({ active, payload, showBcv, showUsdt }: CustomTooltipProp
   return null;
 };
 
+// Forma del objeto de estadísticas calculado para el reporte mensual
+interface EstadisticasMes {
+  fechaInicio?: string;
+  fechaFin?: string;
+  bcvFinal: number;
+  varBcv: number;
+  varBcvPct: number;
+  usdtFinal: number;
+  varUsdt: number;
+  varUsdtPct: number;
+  bcvMax: number;
+  bcvMin: number;
+  usdtMax: number;
+  usdtMin: number;
+  promedioBcv: number;
+  promedioUsdt: number;
+  brechaPromedio: number;
+}
+
 // 3. COMPONENTE PRINCIPAL
 export default function Historial({ historial }: HistorialProps) {
   const [range, setRange] = useState<'7D' | '1M' | '3M' | '6M' | 'YTD'>('7D');
-  const [activePoint, setActivePoint] = useState<any>(null);
+  const [activePoint, setActivePoint] = useState<HistorialItem | null>(null);
 
   // Estados de control de capas
   const [showBcv, setShowBcv] = useState(true);
@@ -82,7 +102,7 @@ export default function Historial({ historial }: HistorialProps) {
   // Estado para controlar la ventana modal del reporte mensual
   const [showReportModal, setShowReportModal] = useState(false);
 
-  const getFilteredData = () => {
+  const getFilteredData = (): HistorialItem[] => {
     if (!historial || historial.length === 0) return [];
     
     switch (range) {
@@ -103,7 +123,7 @@ export default function Historial({ historial }: HistorialProps) {
   };
 
   const dataFiltrada = getFilteredData();
-  const ultimoPunto = dataFiltrada[dataFiltrada.length - 1] || { bcv: 0, binance: 0, fecha: '' };
+  const ultimoPunto: HistorialItem = dataFiltrada[dataFiltrada.length - 1] || { bcv: 0, binance: 0, brecha: 0, fecha: '' };
   const puntoAExhibir = activePoint || ultimoPunto;
 
   const bcvVal = puntoAExhibir?.bcv || 0;
@@ -112,10 +132,10 @@ export default function Historial({ historial }: HistorialProps) {
   const difPorcentaje = bcvVal ? (diferencia / bcvVal) * 100 : 0;
 
   // Datos fijos de los últimos 30 días para el Reporte Mensual
-  const datosUltimoMes = historial ? historial.slice(-30) : [];
+  const datosUltimoMes: HistorialItem[] = historial ? historial.slice(-30) : [];
 
   // Cálculos estadísticos para el Reporte Mensual
-  const calcularEstadisticasMes = () => {
+  const calcularEstadisticasMes = (): EstadisticasMes | null => {
     if (!datosUltimoMes || datosUltimoMes.length === 0) return null;
 
     const primerDato = datosUltimoMes[0];
@@ -314,9 +334,17 @@ export default function Historial({ historial }: HistorialProps) {
           <AreaChart
             data={dataFiltrada}
             margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-            onMouseMove={(e: any) => {
-              if (e && e.activePayload && e.activePayload.length > 0) {
-                setActivePoint(e.activePayload[0].payload);
+            onMouseMove={(e) => {
+              // El tipo MouseHandlerDataParam de recharts no incluye
+              // "activePayload" pese a que la librería sí lo envía en
+              // runtime (problema conocido de sus tipos, no nuestro).
+              // Afirmamos acá la forma real, una sola vez, en vez de
+              // tipar todo el callback como "any".
+              const punto = (
+                e as unknown as { activePayload?: Array<{ payload: HistorialItem }> }
+              )?.activePayload?.[0]?.payload;
+              if (punto) {
+                setActivePoint(punto);
               }
             }}
             onMouseLeave={() => setActivePoint(null)}

@@ -4,6 +4,7 @@ import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'rec
 import Conversor from '@/components/Conversor';
 import Historial from '@/components/Historial';
 import BottomNav from '@/components/BottomNav';
+import type { TasasData, TasasResponse, HistorialItem, HistorialResponse } from '@/types/api';
 
 // Función auxiliar para cambiar el formato de la fecha de YYYY-MM-DD a DD/MM/YYYY
 const formatFecha = (fechaRaw: string) => {
@@ -14,7 +15,14 @@ const formatFecha = (fechaRaw: string) => {
 };
 
 // Componente puente: Actualiza los estados de la página usando el motor interno del Tooltip
-function ChartTooltipUpdater({ active, payload, setPrice, setDate }: any) {
+interface ChartTooltipUpdaterProps {
+  active?: boolean;
+  payload?: Array<{ value: number; payload: HistorialItem }>;
+  setPrice: (v: number | null) => void;
+  setDate: (v: string | null) => void;
+}
+
+function ChartTooltipUpdater({ active, payload, setPrice, setDate }: ChartTooltipUpdaterProps) {
   useEffect(() => {
     if (active && payload && payload.length > 0) {
       setPrice(payload[0].value);
@@ -29,16 +37,16 @@ function ChartTooltipUpdater({ active, payload, setPrice, setDate }: any) {
 }
 
 export default function HomePage() {
-  const [data, setData] = useState<any>(null);
-  const [historial, setHistorial] = useState<any[]>([]);
-  
+  const [data, setData] = useState<TasasData | null>(null);
+  const [historial, setHistorial] = useState<HistorialItem[]>([]);
+
   // Estado de navegación mapeado con las opciones de BottomNav
   const [vista, setVista] = useState<'overview' | 'analytics' | 'converter' | 'settings'>('overview');
 
   // Estados para el rastreo interactivo en los gráficos
   const [hoveredBcv, setHoveredBcv] = useState<number | null>(null);
   const [hoveredBcvDate, setHoveredBcvDate] = useState<string | null>(null);
-  
+
   const [hoveredUsdt, setHoveredUsdt] = useState<number | null>(null);
   const [hoveredUsdtDate, setHoveredUsdtDate] = useState<string | null>(null);
 
@@ -54,27 +62,27 @@ export default function HomePage() {
           fetch('/api/tasas'),
           fetch('/api/historial?limit=200')
         ]);
-        
-        const jsonTasas = await resTasas.json();
-        const jsonHist = await resHist.json();
 
-        const rawData = jsonHist.data || [];
-        const dailyDataMap = rawData.reduce((acc: any, item: any) => {
+        const jsonTasas: TasasResponse = await resTasas.json();
+        const jsonHist: HistorialResponse = await resHist.json();
+
+        const rawData: HistorialItem[] = jsonHist.data || [];
+        const dailyDataMap = rawData.reduce<Record<string, HistorialItem>>((acc, item) => {
           const date = item.fecha.split('T')[0];
-          acc[date] = item; 
+          acc[date] = item;
           return acc;
         }, {});
 
-        const sortedData = Object.values(dailyDataMap).sort((a: any, b: any) => 
-          new Date((a as any).fecha).getTime() - new Date((b as any).fecha).getTime()
+        const sortedData: HistorialItem[] = Object.values(dailyDataMap).sort(
+          (a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime()
         );
-        
+
         setData(jsonTasas.data);
         // Guardamos el histórico completo (hasta 200 días). Las tarjetas de
         // "Estadísticas Mensuales (30D)" recortan a 30 en el momento de usarlo;
         // el componente Historial usa el set completo para sus propios rangos
         // (7D/1M/3M/6M/YTD).
-        setHistorial(sortedData as any[]);
+        setHistorial(sortedData);
       } catch (err) {
         console.error("Error cargando datos:", err);
       }
@@ -96,7 +104,7 @@ export default function HomePage() {
   const listaUSDT = historial30D.map(h => h.binance).filter(Boolean);
   const maxUSDT = listaUSDT.length ? Math.max(...listaUSDT) : usdtRate;
   const minUSDT = listaUSDT.length ? Math.min(...listaUSDT) : usdtRate;
-  
+
   const primerUSDT = historial30D[0]?.binance || usdtRate;
   const rendimientoMensual = primerUSDT ? ((usdtRate - primerUSDT) / primerUSDT) * 100 : 0;
 
